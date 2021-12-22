@@ -23,6 +23,9 @@ class TCPSender {
     //! outbound queue of segments that the TCPSender wants sent
     std::queue<TCPSegment> _segments_out{};
 
+    //! queue of segments that the no ack
+    std::deque<TCPSegment> _segments_outgoing{};
+
     //! retransmission timer for the connection
     unsigned int _initial_retransmission_timeout;
 
@@ -32,6 +35,8 @@ class TCPSender {
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
 
+    //! the receiver window size
+    size_t _window_size;
   public:
     //! Initialize a TCPSender
     TCPSender(const size_t capacity = TCPConfig::DEFAULT_CAPACITY,
