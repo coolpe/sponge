@@ -35,6 +35,7 @@ class TCPSender {
     bool _syn{false};
     bool _fin{false};
     uint16_t _receiver_window_size{0};
+    bool _receiver_window_zero{false};
     uint16_t _consecutive_retransmissions{0};
     unsigned int _rto{0};
     unsigned int _time_elapsed{0};

@@ -3,6 +3,7 @@
 #include "tcp_config.hh"
 
 #include <random>
+#include <iostream>
 
 // Dummy implementation of a TCP sender
 
@@ -23,7 +24,7 @@ TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const s
 uint64_t TCPSender::bytes_in_flight() const {
     if (_segments_outgoing.empty())
         return 0;
-    return _next_seqno - unwrap(_segments_outgoing.front().header().seqno, _isn, _next_seqno);
+    return wrap(_next_seqno, _isn)  - _segments_outgoing.front().header().seqno;
 }
 
 void TCPSender::fill_window() {
@@ -40,7 +41,7 @@ void TCPSender::fill_window() {
         return;
     if (_fin)
         return;
-    if (!_receiver_window_size) {
+    if (_receiver_window_zero) {
         TCPSegment seg;
         if (_stream.eof()) {
             _fin = true;
@@ -53,11 +54,11 @@ void TCPSender::fill_window() {
     while (_receiver_window_size) {
         TCPSegment seg;
         size_t payload_size = min({_stream.buffer_size(),
-                                  static_cast<size_t>(_receiver_window_size),
-                                  static_cast<size_t>(TCPConfig::MAX_PAYLOAD_SIZE)});
+                                   static_cast<size_t>(_receiver_window_size),
+                                   static_cast<size_t>(TCPConfig::MAX_PAYLOAD_SIZE)});
         seg.payload() = _stream.read(payload_size);
         if (_stream.eof() && static_cast<size_t>(_receiver_window_size) > payload_size) {
-            seg.header().fin= true;
+            seg.header().fin = true;
             _fin = true;
         }
         send_segment(seg);
@@ -72,10 +73,11 @@ void TCPSender::fill_window() {
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) {
     uint64_t abs_ackno = unwrap(ackno, _isn, _next_seqno);
     uint64_t abs_seqno = unwrap(_segments_outgoing.front().header().seqno, _isn, _next_seqno);
-    if (abs_ackno > _next_seqno && abs_ackno < abs_seqno) {
+    if (abs_ackno > _next_seqno || abs_ackno < abs_seqno) {
         return;
     }
     _receiver_window_size = window_size;
+    _receiver_window_zero = window_size ? false: true;
     while (!_segments_outgoing.empty()){
         TCPSegment seg = _segments_outgoing.front();
         if (unwrap(seg.header().seqno, _isn, _next_seqno) + seg.length_in_sequence_space() <= abs_ackno){
@@ -105,7 +107,7 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
     _time_elapsed += ms_since_last_tick;
     if (_time_elapsed >= _rto) {
         _segments_out.push(_segments_outgoing.front());
-        if (_receiver_window_size || _segments_outgoing.front().header().syn) {
+        if (!_receiver_window_zero || _segments_outgoing.front().header().syn) {
             ++_consecutive_retransmissions;
             _rto <<=1;
         }
