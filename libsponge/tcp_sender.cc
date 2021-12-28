@@ -37,11 +37,11 @@ void TCPSender::fill_window() {
     }
     if (!_segments_outgoing.empty() && _segments_outgoing.front().header().syn)
         return;
-    if (_stream.buffer_empty() && !_stream.input_ended())
+    if (!_stream.buffer_size() && !_stream.eof())
         return;
     if (_fin)
         return;
-    if (_receiver_window_zero) {
+    if (_receiver_window_zero && _receiver_window_size) {
         TCPSegment seg;
         if (_stream.eof()) {
             _fin = true;
@@ -76,8 +76,8 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     if (abs_ackno > _next_seqno || abs_ackno < abs_seqno) {
         return;
     }
-    _receiver_window_size = window_size;
     _receiver_window_zero = window_size ? false: true;
+    _receiver_window_size = _receiver_window_zero ? 1:window_size;
     while (!_segments_outgoing.empty()){
         TCPSegment seg = _segments_outgoing.front();
         if (unwrap(seg.header().seqno, _isn, _next_seqno) + seg.length_in_sequence_space() <= abs_ackno){
@@ -107,6 +107,7 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
     _time_elapsed += ms_since_last_tick;
     if (_time_elapsed >= _rto) {
         _segments_out.push(_segments_outgoing.front());
+        //! 窗口大小为 0 时不需要增加 RTO。但是发送 SYN 时，窗口为初始值也为 0，而 SYN 超时是需要增加 RTO 的。
         if (!_receiver_window_zero || _segments_outgoing.front().header().syn) {
             ++_consecutive_retransmissions;
             _rto <<=1;
@@ -134,5 +135,4 @@ void TCPSender::send_segment(TCPSegment &seg){
         _timer_running = true;
         _time_elapsed = 0;
     }
-
 }
